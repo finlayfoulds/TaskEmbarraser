@@ -115,12 +115,12 @@ app.get("/view-recipe", loginRequired, async (req, res) => {
   recipeId = recipeId[0][0].id
 
   //get ingredients with that id
-  let ingredients = await db.query("SELECT ingredient FROM ingredients WHERE recipe_id = ? AND user_id = ?", [recipe[0][0].id, req.session.userId])
+  let ingredients = await db.query("SELECT ingredient FROM ingredients WHERE recipe_id = ? AND user_id = ?", [recipeId, req.session.userId])
   //convert to array of just ingredients
   ingredients = ingredients[0].flat().map((item) => item.ingredient)
 
   //get steps with that id
-  let steps = await db.query("SELECT step FROM steps WHERE recipe_id = ? AND user_id = ? ORDER BY number ASC", [recipe[0][0].id, req.session.userId])
+  let steps = await db.query("SELECT step FROM steps WHERE recipe_id = ? AND user_id = ? ORDER BY number ASC", [recipeId, req.session.userId])
   //convert to array of just steps
   steps = steps[0].flat().map((item) => item.step)
 
@@ -397,15 +397,18 @@ app.get("/logout", loginRequired, (req, res) => {
 })
 
 app.get("/account", loginRequired, async (req, res) => {
+  //define check within scope
+  let check
+
   //get user info (email and recieveEmails)
   let info = await db.query("SELECT email, recieveEmails FROM users WHERE id = ?", [req.session.userId])
   currentEmail = info[0][0].email
 
   //check if recieveEmails was set to 1 or NULL (yes or no)
   if (info[0][0].recieveEmails === 1) {
-    let check = true
+    check = true
   } else {
-    let check = false
+    check = false
   }
   res.render("account.ejs", { fieldUpdatedSuccessfully, currentEmail, check, userId: req.session.userId })
 })
