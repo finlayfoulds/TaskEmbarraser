@@ -55,158 +55,231 @@ var db = mysql.createPool({
 
 //custom loginRequired middleware
 async function loginRequired(req, res, next) {
+  //if no user session
   if (req.session.userId === undefined) {
+    //redirect to login
     return res.redirect("/login")
-  } else {
-    return next()
-  }
+  } 
+  //else continue
+  return next()
 }
 
 //custom notLoggedIn middleware
 function notLoggedIn(req, res, next) {
+  //if no user session
   if (req.session.userId === undefined) {
+    //continue
     return next()
   }
+  //else redirect to home
   return res.redirect("/")
 }
 
-let allFieldsRequired = false
-let nonExistantUser = false
-let passwordsDoNotMatch = false
-let existingUser = false
-let incorrectPassword = false
-let fieldUpdatedSuccessfully = null
-let currentEmail = null
+//declaring global variables
+let allFieldsRequired
+let nonExistantUser
+let passwordsDoNotMatch
+let existingUser
+let incorrectPassword
+let fieldUpdatedSuccessfully
+let currentEmail
 
 app.get("/", loginRequired, async (req, res) => {
+
   //get users recipes
   let titles = await db.query("SELECT recipe_name FROM recipes WHERE user_id = ?", [req.session.userId])
   if (titles[0][0] !== undefined) {
     titles = titles[0].flat().map((item) => item.recipe_name)
   } else {
+
     //if user has no recipes
     titles = null
   }
+  //render template
   res.render("home.ejs", { userId: req.session.userId, titles })
 })
 
 app.get("/view-recipe", loginRequired, async (req, res) => {
+
+  //declaring and initializing recipeName
   const recipeName = req.query.recipeName
+
+  //get recipe id
+  let recipeId = await db.query("SELECT id FROM recipes WHERE recipe_name = ? AND user_id = ?", [recipeName, req.session.userId])
+
   //if an error occured
-  if (recipeName === undefined) {
+  if (recipeId[0][0] === undefined) {
     return res.redirect("/error")
   }
-  let recipe = await db.query("SELECT id FROM recipes WHERE recipe_name = ? AND user_id = ?", [recipeName, req.session.userId])
-  //get steps and ingredients of recipe based on id
+  //else:
+  recipeId = recipeId[0][0].id
+
+  //get ingredients with that id
   let ingredients = await db.query("SELECT ingredient FROM ingredients WHERE recipe_id = ? AND user_id = ?", [recipe[0][0].id, req.session.userId])
+  //convert to array of just ingredients
   ingredients = ingredients[0].flat().map((item) => item.ingredient)
+
+  //get steps with that id
   let steps = await db.query("SELECT step FROM steps WHERE recipe_id = ? AND user_id = ? ORDER BY number ASC", [recipe[0][0].id, req.session.userId])
+  //convert to array of just steps
   steps = steps[0].flat().map((item) => item.step)
+
+  //render template
   return res.render("view-recipe.ejs", { userId: req.session.userId, recipeName, ingredients, steps })
 })
 
-//render template is seperate directory as view-recipe.ejs is rendered through res.render which isnt valid fetch response
+//Note: render template is seperate directory as view-recipe.ejs is rendered through res.render which isnt valid fetch response
 app.get("/fetch-view-recipe", loginRequired, async (req, res) => {
-  //if an error occured
+
+  //if no recipe chosen
   if (req.query.recipeName === undefined) {
     return res.redirect("/error")
   }
+
   //redirect for template to get rendered
   return res.redirect(`/view-recipe?recipeName=${req.query.recipeName}`)
 })
 
 app.get("/delete-recipe", loginRequired, async (req, res) => {
+
+  //declaring and initializing recipeName
   const recipeName = req.query.recipeName
+
+  //get recipe id
+  let recipeId = await db.query("SELECT id FROM recipes WHERE recipe_name = ? AND user_id = ?", [recipeName, req.session.userId])
+
   //if no recipe chosen
-  if (recipeName === undefined) {
+  if (recipeId[0][0] === undefined) {
     return res.redirect("/error")
   }
-  //delete all recipe data
-  let recipeId = await db.query("SELECT id FROM recipes WHERE recipe_name = ? AND user_id = ?", [recipeName, req.session.userId])
+  //else:
   recipeId = recipeId[0][0].id
+
+   //delete all recipe data
   await db.query("DELETE FROM recipes WHERE id = ? AND user_id = ?", [recipeId, req.session.userId])
   await db.query("DELETE FROM steps WHERE recipe_id = ? AND user_id = ?", [recipeId, req.session.userId])
   await db.query("DELETE FROM ingredients WHERE recipe_id = ? AND user_id = ?", [recipeId, req.session.userId])
+
+  //redirect user to home
   return res.redirect("/")
 })
 
 app.route("/edit-recipe")
 
-//render template is seperate directory as edit-recipe.ejs is rendered through res.render which isnt valid fetch response
+//Note: render template is seperate directory as edit-recipe.ejs is rendered through res.render which isnt valid fetch response
 .get(loginRequired, async (req, res) => {
+
+  //declaring and initializing recipeName
   const recipeName = req.query.recipeName
+
   //get recipes id
   let recipeId = await db.query("SELECT id FROM recipes WHERE recipe_name = ? AND user_id = ?", [recipeName, req.session.userId])
-  //if an error occured
+  
+  //if no recipe chosen
   if (recipeId[0][0] === undefined) {
     return res.redirect("/logout")
   }
-  //get data for rendering template
+  //else:
   recipeId = recipeId[0][0].id
+
+  //get current ingredients
   let ingredients = await db.query("SELECT ingredient FROM ingredients WHERE user_id = ? AND recipe_id = ?", [req.session.userId, recipeId])
+  //convert to array of just ingredients
   ingredients = ingredients[0].flat().map((item) => item.ingredient)
+
+  //get current steps
   let steps = await db.query("SELECT step FROM steps WHERE recipe_id = ? AND user_id = ? ORDER BY number ASC", [recipeId, req.session.userId])
+  //convert to array of just steps
   steps = steps[0].flat().map((item) => item.step)
+
+  //render template with all ingredients, steps and recipeName etc
   return res.render("edit-recipe.ejs", { userId: req.session.userId, recipeName, ingredients, steps, allFieldsRequired, existingUser })
 })
 
-//post request to get recipe data to then render 
+//edited recipe
 .post(loginRequired, async (req, res) => {
+  //initialize global variables specific for this route
   allFieldsRequired = false
   existingUser = false
+
+  //get post data
   const { oldRecipeName, recipeName, ingredients, steps } = req.body
+
   //if not all fields filled in
   if (recipeName === "" || ingredients === "" || steps === "") {
     allFieldsRequired = true
+
+    //redirect with all field required error message
     res.redirect(`/edit-recipe?recipeName=${oldRecipeName}`)
   }
+
   //get recipes id
   let recipeId = await db.query("SELECT id FROM recipes WHERE recipe_name = ? AND user_id = ?", [oldRecipeName, req.session.userId])
   //if an error occured
   if (recipeId[0][0] === undefined) {
     return res.redirect("/logout")
   }
+  //else:
   recipeId = recipeId[0][0].id
-  //update recipe_name if it was changed
+
+  //update recipe name if it was changed
   if (recipeName !== oldRecipeName) {
-    //check for recipe with that name
+
+    //check for existing recipe with new recipe name
     const existing = await db.query("SELECT * FROM recipes WHERE recipe_name = ? AND user_id = ?", [recipeName, req.session.userId])
     if (existing[0][0] !== undefined) {
       existingUser = true
+
+      //if existing recipe redirect with existing recipe error message
       return res.redirect(`/edit-recipe?recipeName=${oldRecipeName}`)
     }
+    //else update recipe name
     await db.execute("UPDATE recipes SET recipe_name = ? WHERE id = ? AND user_id = ?", [recipeName, recipeId, req.session.userId])
   }
-  //get old ingredients and steps data to verify if it was changed
+
+  //get existing ingredients
   let oldIngredients = await db.query("SELECT ingredient FROM ingredients WHERE user_id = ? AND recipe_id = ?", [req.session.userId, recipeId])
-  ///////////fix
+  //convert to array of just ingredients
   oldIngredients = oldIngredients[0].flat().map((item) => item.ingredient)
+
+  //get existing steps
   let oldSteps = await db.query("SELECT step FROM steps WHERE recipe_id = ? AND user_id = ? ORDER BY number ASC", [recipeId, req.session.userId])
+  //convert to array of just steps
   oldSteps = oldSteps[0].flat().map((item) => item.step)
-  //update ingredients if it was changed
-  const ingredientsEqual = JSON.stringify(ingredients) === JSON.stringify(oldIngredients)
-  if (!ingredientsEqual) {
+
+  //check posted ingredients with existing ingredients
+  if (!JSON.stringify(ingredients) === JSON.stringify(oldIngredients)) {
+    //if ingredients do not equal:
+    //delete existing ingredients
     await db.query("DELETE FROM ingredients WHERE recipe_id = ? AND user_id = ?", [recipeId, req.session.userId])
+    //add posted ingredients
     for (const ingredient of ingredients) {
       await db.query("INSERT INTO ingredients (user_id, recipe_id, ingredient) VALUES (?, ?, ?)", [req.session.userId, recipeId, ingredient])
     }
   }
-  //update steps if it was changed
-  const stepsEqual = JSON.stringify(steps) === JSON.stringify(oldSteps)
-  if (!stepsEqual) {
+
+  //check posted steps with existing steps
+  if (!JSON.stringify(steps) === JSON.stringify(oldSteps)) {
+    //if steps do not equal:
+    //delete existing steps
     await db.query("DELETE FROM steps WHERE recipe_id = ? AND user_id = ?", [recipeId, req.session.userId])
+    //add posted steps
     for (const [index, step] of steps.entries()) {
       await db.query("INSERT INTO steps (user_id, recipe_id, number, step) VALUES (?, ?, ?, ?)", [req.session.userId, recipeId, index, step])
     }
   }
+
+  //redirect to view updated recipe
   res.redirect(`/view-recipe?recipeName=${recipeName}`)
 })
 
+//Note: render template is seperate directory as edit-recipe.ejs is rendered through res.render which isnt valid fetch response
 app.get("/fetch-edit-recipe", loginRequired, async (req, res) => {
-  //if an error occured
+  //if no recipe selected
   if (req.query.recipeName === undefined) {
     return res.redirect("/error")
   }
+
   //redirect for template to get rendered
   return res.redirect(`/edit-recipe?recipeName=${req.query.recipeName}`)
 })
@@ -214,84 +287,125 @@ app.get("/fetch-edit-recipe", loginRequired, async (req, res) => {
 app.route("/register")
 
 .get(notLoggedIn, (req, res) => {
+
+  //render template
   res.render("register.ejs", { allFieldsRequired, passwordsDoNotMatch, existingUser, userId: req.session.userId })
 })
 
 .post(notLoggedIn, async (req, res) => {
+  //initialize global variables specific for this route
   allFieldsRequired = false
   passwordsDoNotMatch = false
   existingUser = false
+
+  //get posted new user data
   const { email, password, verify, recieveEmails } = req.body
+
   //if all fields not filled out
   if (email === "" || password === "" || verify === "") {
     allFieldsRequired = true
+
+    //redirect with all field required error message
     return res.redirect("/register")
-    //if passwords are not the same
+
+    //else if passwords are not the same
   } else if (password != verify) {
     passwordsDoNotMatch = true
+
+    //redirect with passwords do not match error message
     return res.redirect("/register")
   }
-  //if existing user
+
+  //else if check for existing user with that email
   const existing = await db.query("SELECT * FROM users WHERE email = ?", [email])
   if (existing[0][0] !== undefined) {
     existingUser = true
+
+    //redirect with existing user error message
     return res.redirect("/register")
   }
-  //if email and password valid
+
+  //hash and salt passwoed
   let hash = await bcrypt.hash(password, 12)
+
+  //insert email, hash and recieve emails or not into db
   await db.query("INSERT INTO users (email, hash, recieveEmails) VALUES (?, ?, ?)", [email, hash, recieveEmails])
+
+  //log user in and create user session with users id
   let id = await db.query("SELECT id FROM users WHERE email = ? AND hash = ?", [email, hash])
   id = id[0][0].id
   req.session.userId = id
+
+  //redirect to home
   return res.redirect("/")
 })
 
 app.route("/login")
 
 .get(notLoggedIn, (req, res) => {
+
+  //render template
   res.render("login.ejs", { allFieldsRequired, nonExistantUser, incorrectPassword, userId: req.session.userId, login: true })
 })
 
 .post(notLoggedIn, async (req, res) => {
+  //initialize global variables specific for this route
   allFieldsRequired = false
   nonExistantUser = false
   incorrectPassword = false
-  //if all fields not filled out
+
+  //get posted data
   const { email, password } = req.body
+
+  //if all fields not filled out
   if (email === "" || password === "") {
     allFieldsRequired = true
+
+    //redirect to login with all fields required error message
     return res.redirect("/login")
   }
+  //else get user id and hash
   let user = await db.query("SELECT id, hash FROM users WHERE email = ?", [email])
-  //if user doesnt exist
+
+  //if user with user[0][0].id doesnt exisst
   if (user[0][0] === undefined) {
     nonExistantUser = true
+
+    //redirect to login with non existing user error message
     return res.redirect("/login")
   } 
-  //if email and password are correct
+
+  //else if password not correct
   if (!(await bcrypt.compare(password, user[0][0].hash))) {
     incorrectPassword = true
+
+    //redirect to login with incorrect password error message
     return res.redirect("/login")
   }
-  //if password incorrect
+  
+  //else create user session
   req.session.userId = user[0][0].id
+  //redirect to home
   return res.redirect("/")
 })
 
 app.get("/logout", loginRequired, (req, res) => {
+  //destroy user session
   req.session.destroy()
+  //redirect user to login
   res.redirect("/login")
 })
 
 app.get("/account", loginRequired, async (req, res) => {
-  let check;
-  //check if recieveEmails was previously checked and get the old email
+  //get user info (email and recieveEmails)
   let info = await db.query("SELECT email, recieveEmails FROM users WHERE id = ?", [req.session.userId])
   currentEmail = info[0][0].email
+
+  //check if recieveEmails was set to 1 or NULL (yes or no)
   if (info[0][0].recieveEmails === 1) {
-    check = true
+    let check = true
   } else {
-    check = false
+    let check = false
   }
   res.render("account.ejs", { fieldUpdatedSuccessfully, currentEmail, check, userId: req.session.userId })
 })
@@ -299,141 +413,213 @@ app.get("/account", loginRequired, async (req, res) => {
 app.route("/edit-email")
 
 .get(loginRequired, async (req, res) => {
+  //render template
   res.render("edit-email.ejs", { currentEmail, existingUser, incorrectPassword, allFieldsRequired, userId: req.session.userId })
 })
 
 .post(loginRequired, async (req, res) => {
+  //initialize global variables specific for this route
   allFieldsRequired = false
   incorrectPassword = false
   existingUser = false
   fieldUpdatedSuccessfully = null
+
+  //get posted data
   const { email, password } = req.body
-  //check all fields filled in
+
+  //if all fields not filled out
   if (email === "" || password === "") {
     allFieldsRequired = true
+    
+    //redirect to edit email with all fields required error message
     return res.redirect("/edit-email")
   }
-  //check passwords correct
+
+  //else if check passwords correct
   incorrectPassword = await db.query("SELECT hash FROM users WHERE id = ?", [req.session.userId])
   if (!(await bcrypt.compare(password, incorrectPassword[0][0].hash))) {
     incorrectPassword = true
+
+    //redirect to edit email with incorrect password error message
     return res.redirect("/edit-email")
   } 
-  //check for an existing user with that email
+
+  //else if existing user with that email
   const existing = await db.query("SELECT * FROM users WHERE email = ?", [email])
   if (existing[0][0] !== undefined) {
     existingUser = true
+
+    //redirect to edit email with existing user error message
     return res.redirect("/edit-email")
   }
+
+  //else update users email
   await db.query("UPDATE users SET email = ? WHERE id = ?", [email, req.session.userId])
   fieldUpdatedSuccessfully = "email"
+
+  //redirect to account with email updated succesfully success message
   return res.redirect("/account")
 })
 
 app.route("/change-password")
 
 .get(loginRequired, async (req, res) => {
+  //render template
   res.render("change-password.ejs", { userId: req.session.userId, passwordsDoNotMatch, allFieldsRequired, incorrectPassword, fieldUpdatedSuccessfully })
 })
 
 .post(loginRequired, async (req, res) => {
+  //initialize global variables specific for this route
   passwordsDoNotMatch = false
   allFieldsRequired = false
   incorrectPassword = false
   fieldUpdatedSuccessfully = null
-  let oldPassword = await db.query("SELECT hash FROM users WHERE id = ?", req.session.userId)
+
+  //get posted data
   const { currentPassword, newPassword, verify } = req.body
+
   //if all field not filled in
   if (currentPassword === "" || newPassword === "" || verify === "") {
     allFieldsRequired = true
+
+    //redirect to change password with all fields required error message
     return res.redirect("/change-password")
   }
-  //if oldPassword incorrect
-  if (!(await bcrypt.compare(currentPassword, oldPassword[0][0].hash))) {
+
+  //get users current hash
+  let currentHash = await db.query("SELECT hash FROM users WHERE id = ?", [req.session.userId])
+
+  //else if current password incorrect
+  if (!(await bcrypt.compare(currentPassword, currentHash[0][0].hash))) {
     incorrectPassword = true
+
+    //redirect to change password with with incorrect password error message
     return res.redirect("/change-password")
   }
-  //if password fields do not match
+
+  //else if new password fields do not match
   if (newPassword !== verify) {
     passwordsDoNotMatch = true
+
+    //redirect to change password with passwords don't match error message
     return res.redirect("/change-password")
   }
+
+  //else update users password
   await db.query("UPDATE users SET hash = ? WHERE id = ?", [await bcrypt.hash(newPassword, 12), req.session.userId])
   fieldUpdatedSuccessfully = "password"
+
+  //redirect to account with password changed succesfully success message
   return res.redirect("/account")
 })
 
 app.post("/edit-recieveEmails", loginRequired, async (req, res) => {
-  //update recieveEmails if changed
+  //update recieveEmails
   await db.query("UPDATE users SET recieveEmails = ? WHERE id = ?", [req.body.recieveEmails, req.session.userId])
   fieldUpdatedSuccessfully = "recieveEmails"
+
+  //redirect to account with recieve emails updated succesfully success message
   return res.redirect("/account")
 })
 
 app.route("/delete-account")
 
 .get(loginRequired, (req, res) => {
+  //render template
   res.render("delete-account.ejs", { incorrectPassword, userId: req.session.userId })
 })
 
 .post(loginRequired, async (req, res) => {
+  //initialize global variables specific for this route
   incorrectPassword = false
+
+  //get users hash
   let hash = await db.query("SELECT hash FROM users WHERE id = ?", req.session.userId)
-  // if password incorrect
+
+  // if posted password is incorrect
   if (!(await bcrypt.compare(req.body.password, hash[0][0].hash))) {
     incorrectPassword = true
+
+    //redirect to delete account with incorrect password error message
     return res.redirect("/delete-account")
   }
-  //destroy user session and delete account
+
+  //destroy user session and delete account and account data
   await db.query("DELETE FROM users WHERE id = ?", [req.session.userId])
   await db.query("DELETE FROM recipes WHERE user_id = ?", [req.session.userId])
   await db.query("DELETE FROM ingredients WHERE user_id = ?", [req.session.userId])
   await db.query("DELETE FROM steps WHERE user_id = ?", [req.session.userId])
   req.session.destroy()
+
+  //redirect to register
   return res.redirect("/register")
 })
 
+//add recipe route
 app.route("/add")
 
 .get(loginRequired, (req, res) => {
+  //render template
   res.render("add.ejs", { userId: req.session.userId, allFieldsRequired, existingUser })
 })
 
 .post(loginRequired, async (req, res) => {
+  //initialize global variables specific for this route
   allFieldsRequired = false
   existingUser = false
+
+  //get posted data
   const { recipeName, ingredients, steps } = req.body
-  //check all fields filled in
+
+  //if check all fields not filled in
   if (recipeName === "" || ingredients === "" || steps === "") {
     allFieldsRequired = true
+
+    //redirect to add with all fields required error message
     return res.redirect("/add")
   }
-  //check for recipe with that name
+
+  //else if existing recipe with that name
   const existing = await db.query("SELECT * FROM recipes WHERE recipe_name = ? AND user_id = ?", [recipeName, req.session.userId])
   if (existing[0][0] !== undefined) {
-    existingUser = true;
+    existingUser = true
+
+    //redirect to add with existing recipe name error message
     return res.redirect("/add")
   }
-  //insert all data to db
+
+  //else insert recipe name into db
   await db.query("INSERT INTO recipes (user_id, recipe_name) VALUES (?, ?)", [req.session.userId, recipeName])
+
+  //get recipes id
   const recipe_id = await db.query("SELECT LAST_INSERT_ID() as id")
+
+  //insert ingredients to db
   for (const ingredient of ingredients) {
     await db.query("INSERT INTO ingredients (user_id, recipe_id, ingredient) VALUES (?, ?, ?)", [req.session.userId, recipe_id[0][0].id, ingredient])
   }
+
+  //insert steps to db
   for (const [index, step] of steps.entries()) {
     await db.query("INSERT INTO steps (user_id, recipe_id, number, step) VALUES (?, ?, ?, ?)", [req.session.userId, recipe_id[0][0].id, index, step])
   }
+
+  //redirect to home
   return res.redirect("/")
 })
 
 app.get("/error", (req, res) => {
+  //render template
   res.sendFile(join(__dirname, "views", "error.html"))
 })
 
+//catch unfound pages
 app.use((req, res, next) => {
+  //render unfound pages template
   res.status(404).sendFile(join(__dirname, "views", "unfound-page.html"))
 })
 
+//server listen
 app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+  console.log(`Server running on port ${port}`)
+})
