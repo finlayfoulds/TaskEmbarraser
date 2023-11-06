@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN" crossorigin="anonymous">
+  <link rel="stylesheet" href="../static/styles.css">
+  <title>TaskEmbarraser | Login</title>
+</head>
+<%- include("header.ejs") -%>
+<body>
+  <div id="welcome">
+    <h1>Login to TaskEmbarraser</h1>
+  </div>
+  <div id="form">
+    <form action="/login" method="POST" autocomplete="on">
+      <div class="mb-3">
+        <label for="email" class="form-label">Email address</label>
+        <input autocomplete="email" autofocus name="email" type="email" class="form-control" id="email" aria-describedby="emailHelp">
+      </div>
+      <div class="mb-3">
+        <label for="password" class="form-label">Password</label>
+        <input autocomplete="current-password" name="password" type="password" class="form-control" id="password">
+      </div>
+    <% if (allFieldsRequired || nonExistantUser || incorrectPassword) { %>
+      <div class="alert alert-danger" role="alert">
+      <% if (allFieldsRequired) { %> 
+        All Fields Required
+      <% } else if (nonExistantUser) { %>
+        User doesn't exist with that email <a href="/register">Register?</a>
+      <% } else { %>
+        Password Incorrect
+      <% } %>
+      </div>
+    <% } %>
+      <button type="submit" class="btn btn-primary">Login</button>
+    </form>
+  </div>
+</body>
+<script src="../static/index.js" charset="UTF-8"></script>
+</html>
