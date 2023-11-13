@@ -1,11 +1,11 @@
 {
-  "name": "week-10-final-project---lostpaws-",
+  "name": "week-10-final-project-TaskEmbarraser",
   "version": "1.0.0",
   "description": "",
   "main": "app.js",
   "type": "module",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "npm install && npm run build",
     "start": "node server/index.js"
   },
   "keywords": [],
